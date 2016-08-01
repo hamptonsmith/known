@@ -1,0 +1,33 @@
+{
+  "name": "@shieldsbetter/known",
+  "version": "0.0.1",
+  "description": "Template-satisfying query engine in the style of Prolog.",
+  "main": "index.js",
+  "dependencies": {
+    "@shieldsbetter/log-formatter": "0.0.1",
+    "clone": "^1.0.2"
+  },
+  "devDependencies": {
+    "assert": "^1.4.1",
+    "deep-equal": "^1.0.1"
+  },
+  "scripts": {
+    "test": "node tests/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/hamptonsmith/known.git"
+  },
+  "keywords": [
+    "database",
+    "query",
+    "logic",
+    "prolog"
+  ],
+  "author": "Hampton Smith",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hamptonsmith/known/issues"
+  },
+  "homepage": "https://github.com/hamptonsmith/known#readme"
+}
