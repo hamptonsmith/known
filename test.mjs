@@ -325,7 +325,6 @@ const testCases = [
 
     {
         name: 'dynamic object matcher',
-        skip: true,
         actualFn: () =>
             known([
                 { foo: 'fooval' },
