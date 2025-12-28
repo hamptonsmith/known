@@ -31,7 +31,9 @@ export default function bind(template, target, ctx) {
 
 function _bind(template, target, ctx) {
     return debug.push('bind', template, target, () => {
-        if (template?.free) {
+        const [ templateOp ] = utils.deast(template);
+
+        if (templateOp === 'free') {
             return { [template?.free]: target };
         }
 
@@ -55,7 +57,8 @@ function _bind(template, target, ctx) {
             }
         }
 
-        const templateObj = !Array.isArray(template) && typeof template === 'object' && template !== null;
+        const templateObj = !Array.isArray(template)
+                && typeof template === 'object' && template !== null;
 
         if (templateObj && typeof target === 'object' && target !== null) {
             const binding = directBindObject(template, target, ctx);

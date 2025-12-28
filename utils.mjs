@@ -178,3 +178,15 @@ export function pushAll(target, source) {
         target.push(x);
     }
 }
+
+export function shallowCopy(x) {
+    if (Array.isArray(x)) {
+        return [ ...x ];
+    }
+
+    if (typeof x === 'object') {
+        return { ...x };
+    }
+
+    return x;
+}

@@ -55,6 +55,21 @@ export function solveFor(...args) {
             'solveFor', ...args.slice(0, -1), () => _solveFor(...args));
 }
 
+export function solveForAll(template, target, ctx) {
+    const free = utils.getFree(template);
+
+    const binding = {};
+    for (const v of free) {
+        binding[v] = solveFor(template, target, v, ctx);
+
+        if (binding[v] === undefined) {
+            return false;
+        }
+    }
+
+    return binding;
+}
+
 function tryPath(eqLeft, eqRight, targetVar, path, ctx) {
     path = [ ...path ];
 
@@ -98,8 +113,8 @@ function tryPath(eqLeft, eqRight, targetVar, path, ctx) {
                     && Array.isArray(eqLeft) === Array.isArray(eqRight)
                     && eqLeft?.length === eqRight?.length
             ) {
-                const eqLeftCopy = shallowCopy(eqLeft);
-                const eqRightCopy = shallowCopy(eqRight);
+                const eqLeftCopy = utils.shallowCopy(eqLeft);
+                const eqRightCopy = utils.shallowCopy(eqRight);
 
                 eqLeftCopy[component] = undefined;
                 eqRightCopy[component] = undefined;
@@ -146,18 +161,6 @@ function _solveFor(eqLeft, eqRight, targetVar, ctx) {
     }
 
     return undefined;
-}
-
-function shallowCopy(x) {
-    if (Array.isArray(x)) {
-        return [ ...x ];
-    }
-
-    if (typeof x === 'object') {
-        return { ...x };
-    }
-
-    return x;
 }
 
 export function isSolvableAst(o) {

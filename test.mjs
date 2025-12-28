@@ -248,7 +248,7 @@ const testCases = [
     {
         name: 'minimum spanning tree',
         actualFn: () => known(
-            ({ _, implication, op }) => [
+            ({ _, implication }) => [
 
                 { edge: [ 'A', 'B' ] },
                 { edge: [ 'B', 'C' ] },
@@ -320,6 +320,30 @@ const testCases = [
         })),
         expected: [
             { n: 4 }
+        ]
+    },
+
+    {
+        name: 'dynamic object matcher',
+        skip: true,
+        actualFn: () =>
+            known([
+                { foo: 'fooval' },
+                { bar: 'barval', bazz: 'bazzval' },
+                { waldo: 'waldoval', plugh: 'plughval' },
+                { silly: 'sillyval', fred: 'fredval', thud: 'thudval' }
+            ])
+            .instantiate((_) => ({
+                object: [
+                    [ _('k1'), _('v1') ],
+                    [ _('k2'), _('v2') ],
+                ]
+            })),
+        expected: [
+            { k1: 'bar', v1: 'barval', k2: 'bazz', v2: 'bazzval' },
+            { k1: 'bazz', v1: 'bazzval', k2: 'bar', v2: 'barval' },
+            { k1: 'waldo', v1: 'waldoval', k2: 'plugh', v2: 'plughval' },
+            { k1: 'plugh', v1: 'plughval', k2: 'waldo', v2: 'waldoval' },
         ]
     }
 ];

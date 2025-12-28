@@ -5,7 +5,7 @@ import deepEqual from 'deep-equal';
 import evaluate from './evaluate.mjs';
 import * as utils from './utils.mjs';
 
-import { isSolvableAst } from './solve.mjs';
+import { isSolvableAst, solveForAll } from './solve.mjs';
 
 import util from 'util';
 function inspect(x) {
@@ -19,7 +19,6 @@ const axiomaticRules = [
                 let bindings = bind(x, y, ctx);
                 return bindings ? [{ bindings, conditions: [] }] : [];
             }
-            //utils.getFree([x, y]).size <= 1 ? solve(x, y) : []
         ],
         consequent: { eq: [{ free: 'x' }, { free: 'y' }] },
         conditions: []
@@ -108,8 +107,13 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
             const [ dodgingTemplate, dodgeBindings, undodgeBindings ] =
                     utils.dodgeVars(template, utils.getFree(consequent));
 
+            const dodgedFreeVars = utils.getFree(dodgingTemplate);
+
             const consequentBinding =
                     bind(consequent, dodgingTemplate, bindCtx);
+
+            const dodgingTemplateApplied =
+                    utils.apply(dodgingTemplate, consequentBinding);
 
             debug.print('consequentBinding', consequentBinding);
 
@@ -140,17 +144,30 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
 
             const results = [];
             for (const i of antecedentInstantiations) {
-                const expandedUndodgedConsequent = utils.apply(
-                        utils.apply(consequentApplied, i.bindings),
-                        undodgeBindings);
+                const expandedConsequent =
+                        utils.apply(consequentApplied, i.bindings);
+
+                const expandedUndodgedConsequent =
+                        utils.apply(expandedConsequent, undodgeBindings);
 
                 const expandedUndodgedConditions = utils.apply([
                     ...conditionsApplied,
                     ...i.conditions
                 ], undodgeBindings);
 
-                const templateBinding = bind(
-                        template, expandedUndodgedConsequent, bindCtx);
+                const additionalDodgingTemplateBinding = bind(
+                        dodgingTemplateApplied, expandedConsequent, bindCtx);
+
+                const fullDodgingTemplateBinding = {
+                    ...consequentBinding,
+                    ...additionalDodgingTemplateBinding
+                };
+
+                const templateBinding = Object.fromEntries(
+                    Object.entries(fullDodgingTemplateBinding)
+                    .filter(([k, v]) => dodgedFreeVars.has(k))
+                    .map(([k, v]) => [undodgeBindings[k]?.free ?? k, v])
+                );
 
                 debug.print('templateBinding', templateBinding);
 
