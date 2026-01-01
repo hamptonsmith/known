@@ -12,6 +12,10 @@ const rules2 = {
     eq: (arg, argIndex, otherExp) => {
         debug.print('eq', arg, argIndex, otherExp);
 
+        if (otherExp === true) {
+            return [ arg[argIndex], arg[argIndex === 0 ? 1 : 0] ];
+        }
+
         const [ otherOp, otherArg ] = utils.deast(otherExp, 'eq');
 
         if (!otherOp) {

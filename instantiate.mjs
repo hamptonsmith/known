@@ -17,7 +17,7 @@ const axiomaticRules = [
         antecedents: [
             ({ x, y }, ctx) => {
                 let bindings = bind(x, y, ctx);
-                return bindings ? [{ bindings, conditions: [] }] : [];
+                return bindings.map(b => ({ bindings: b, conditions: [] }));
             }
         ],
         consequent: { eq: [{ free: 'x' }, { free: 'y' }] },
@@ -86,12 +86,12 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
     const [ tOp ] = utils.deast(template);
     const [ cOp ] = utils.deast(consequent);
 
-    if (tOp !== 'free' && cOp !== 'free' && tOp !== cOp
+    if (tOp !== 'object' && tOp !== 'free' && cOp !== 'free' && tOp !== cOp
             && !isSolvableAst(template) && !isSolvableAst(consequent)) {
         return [];
     }
 
-    if (typeof tOp === 'object' && typeof cOp === 'object'
+    if (!tOp?.object && typeof tOp === 'object' && typeof cOp === 'object'
             && Object.keys(tOp).length !== Object.keys(cOp)) {
         return [];
     }
@@ -109,22 +109,48 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
 
             const dodgedFreeVars = utils.getFree(dodgingTemplate);
 
-            const consequentBinding =
+            const consequentBindingAlternatives =
                     bind(consequent, dodgingTemplate, bindCtx);
+
+            const results = [];
+            for (const cba of consequentBindingAlternatives) {
+                utils.pushAll(results, applyRuleUnderConsequentBinding(
+                    rules,
+                    cba,
+                    dodgingTemplate,
+                    undodgeBindings,
+                    antecedents,
+                    conditions,
+                    consequent,
+                    bindCtx,
+                    startFreeVars
+                ));
+            }
+
+            return results;
+        });
+}
+
+function applyRuleUnderConsequentBinding(
+    rules,
+    consequentBinding,
+    dodgingTemplate,
+    undodgeBindings,
+    antecedents,
+    conditions,
+    consequent,
+    bindCtx,
+    startFreeVars
+) {
+    return debug.push('applyRuleUnderConsequentBinding', consequentBinding,
+        () => {
+            const dodgedFreeVars = utils.getFree(dodgingTemplate);
 
             const dodgingTemplateApplied =
                     utils.apply(dodgingTemplate, consequentBinding);
 
-            debug.print('consequentBinding', consequentBinding);
-
-            if (!consequentBinding) {
-                return [];
-            }
-
             const conditionsApplied = conditions.map(
                     c => evaluate(utils.apply(c, consequentBinding), bindCtx));
-
-            debug.print('conditionsApplied', conditionsApplied);
 
             if (conditionsApplied.some(c => c === false)) {
                 return [];
@@ -135,12 +161,8 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
             const consequentApplied =
                     utils.apply(consequent, consequentBinding);
 
-            debug.print('antecedentsApplied', antecedentsApplied);
-
             const antecedentInstantiations = instantiate(
                     rules, antecedentsApplied, conditionsApplied);
-
-            debug.print('antecedentInstantiations', antecedentInstantiations);
 
             const results = [];
             for (const i of antecedentInstantiations) {
@@ -155,57 +177,59 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
                     ...i.conditions
                 ], undodgeBindings);
 
-                const additionalDodgingTemplateBinding = bind(
+                const additionalBindingAlternatives = bind(
                         dodgingTemplateApplied, expandedConsequent, bindCtx);
 
-                const fullDodgingTemplateBinding = {
-                    ...consequentBinding,
-                    ...additionalDodgingTemplateBinding
-                };
+                debug.print('additionalBindingAlternatives', additionalBindingAlternatives);
 
-                const templateBinding = Object.fromEntries(
-                    Object.entries(fullDodgingTemplateBinding)
-                    .filter(([k, v]) => dodgedFreeVars.has(k))
-                    .map(([k, v]) => [undodgeBindings[k]?.free ?? k, v])
-                );
+                for (const additionalBinding of additionalBindingAlternatives) {
+                    const fullDodgingTemplateBinding = {
+                        ...consequentBinding,
+                        ...additionalBinding
+                    };
 
-                debug.print('templateBinding', templateBinding);
+                    debug.print('fullDodgingTemplateBinding', fullDodgingTemplateBinding);
 
-                if (!templateBinding) {
-                    continue;
-                }
+                    const templateBinding = Object.fromEntries(
+                        Object.entries(fullDodgingTemplateBinding)
+                        .filter(([k, v]) => dodgedFreeVars.has(k))
+                        .map(([k, v]) => [undodgeBindings[k]?.free ?? k, v])
+                    );
 
-                for (const v of Object.values(templateBinding)) {
-                    const vars = utils.getFree(v);
+                    for (const v of Object.values(templateBinding)) {
+                        const vars = utils.getFree(v);
 
-                    if (!startFreeVars.isSupersetOf(vars)) {
-                        console.log('Huh?');
-                        console.log(inspect(template));
-                        console.log(inspect(antecedents), inspect(conditions), inspect(consequent));
-                        console.log(inspect(templateBinding));
-                        process.exit(1);
-                    }
-                }
-
-                const additionalResults = utils.applyAndEval(
-                        templateBinding,
-                        expandedUndodgedConditions,
-                        bindCtx);
-
-                for (const r of additionalResults) {
-                    for (const k of Object.keys(r.bindings)) {
-                        if (!startFreeVars.has(k)) {
-                            console.error('Introduced a bad var applying', antecedents, consequent);
-                            console.error(r.bindings);
+                        if (!startFreeVars.isSupersetOf(vars)) {
+                            console.log('Huh?');
+                            console.log(inspect(template));
+                            console.log(inspect(antecedents),
+                                    inspect(conditions), inspect(consequent));
+                            console.log(inspect(templateBinding));
                             process.exit(1);
                         }
                     }
-                }
 
-                utils.pushAll(results, utils.applyAndEval(
-                        templateBinding,
-                        expandedUndodgedConditions,
-                        bindCtx));
+                    const additionalResults = utils.applyAndEval(
+                            templateBinding,
+                            expandedUndodgedConditions,
+                            bindCtx);
+
+                    for (const r of additionalResults) {
+                        for (const k of Object.keys(r.bindings)) {
+                            if (!startFreeVars.has(k)) {
+                                console.error('Introduced a bad var applying',
+                                        antecedents, consequent);
+                                console.error(r.bindings);
+                                process.exit(1);
+                            }
+                        }
+                    }
+
+                    utils.pushAll(results, utils.applyAndEval(
+                            templateBinding,
+                            expandedUndodgedConditions,
+                            bindCtx));
+                }
             }
 
             return results;

@@ -246,6 +246,80 @@ const testCases = [
     },
 
     {
+        name: 'baby mimimum spanning tree',
+        actualFn: () => known(
+            ({ _, implication }) => [
+
+                { edge: [ 'A', 'B' ] },
+
+                {
+                    dist: {
+                        from: _('x'),
+                        to: _('x'),
+                        length: 0,
+                        avoid: _('y')
+                    }
+                },
+
+                { contains: [ { cat: [ _('x'), _('y') ] }, _('x') ] },
+                implication
+                    .given({ contains: [ _('x'), _('y') ] })
+                    .conclude({
+                        contains: [
+                            { cat: [ _('z'), _('x') ] },
+                            _('y')
+                        ]
+                    }),
+
+                implication
+                    .given(
+                        { edge: [ _('y'), _('z') ] },
+                        {
+                            dist: {
+                                from: _('x'),
+                                to: _('y'),
+                                length: _('n'),
+                                avoid: { cat: [ _('z'), _('visited') ] }
+                            }
+                        }
+                    )
+                    .where(
+                        {
+                            not: {
+                                exists: [
+                                    [],
+                                    [
+                                        {
+                                            contains: [ _('visited'), _('z') ]
+                                        }
+                                    ]
+                                ]
+                            }
+                        }
+                    )
+                    .conclude({
+                        dist: {
+                            from: _('x'),
+                            to: _('z'),
+                            length: { sum: [ 1, _('n') ] },
+                            avoid: _('visited')
+                        }
+                    })
+            ]
+        ).instantiate((_) => ({
+            dist: {
+                from: 'A',
+                to: 'B',
+                length: _('n'),
+                avoid: utils.arrayToCats([])
+            }
+        })),
+        expected: [
+            { n: 1 }
+        ]
+    },
+
+    {
         name: 'minimum spanning tree',
         actualFn: () => known(
             ({ _, implication }) => [
@@ -377,7 +451,7 @@ for (const test of testCases) {
         }
     }
     catch (e) {
-        withDebug(runTestFn);
+        //withDebug(runTestFn);
         console.error('Error in ' + test.name + ': ' + e.stack);
         console.error();
         console.error('Error in ' + test.name + '.');

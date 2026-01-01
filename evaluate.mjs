@@ -61,9 +61,10 @@ const opEvals = {
             return nEvald === 0;
         }
 
-        if (listEvald?.cat) {
-            return this.length(listEvald.cat[1], { diff: [ nEvald, 1 ] } );
-        }
+        // if (listEvald?.cat) {
+        //     return this.length(
+        //             [ listEvald.cat[1], { diff: [ nEvald, 1 ] } ], ctx);
+        // }
 
         return { length: [ listEvald, nEvald ] };
     },

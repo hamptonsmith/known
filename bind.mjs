@@ -11,135 +11,215 @@ export default function bind(template, target, ctx) {
 
     const bindings = _bind(template, target, ctx);
 
-    if (!bindings) {
-        return false;
+    if (bindings.length === 0) {
+        return [];
     }
 
-    if (utils.getFree(template).size === 0) {
-        const appliedTarget = utils.apply(target, bindings);
-
-        if (!deepEqual(evaluate(template, ctx), evaluate(appliedTarget, ctx))) {
-            debug.print('rejected');
-            debug.print(template);
-            debug.print(target, evaluate(appliedTarget, ctx));
-            return false;
-        }
+    if (bindings.length === 1 && Object.keys(bindings).length === 0) {
+        return deepEqual(evaluate(template, ctx), evaluate(target, ctx))
+                ? [] : [{}];
     }
 
     return bindings;
+}
+
+const matchers = [
+
+    // Free variable matcher.
+    (template, target, ctx) => {
+        const [ templateOp ] = utils.deast(template, 'free');
+
+        if (!templateOp) {
+            return;
+        }
+
+        return [ { [template?.free]: target } ];
+    },
+
+    // Array matcher.
+    (template, target, ctx) => {
+        if (!Array.isArray(template) || !Array.isArray(target)) {
+            return;
+        }
+
+        if (template.length !== target.length) {
+            return;
+        }
+
+        if (template.length === 0) {
+            return [{}];
+        }
+
+        const [ temHead, ...temTail ] = template;
+        const [ tarHead, ...tarTail ] = target;
+
+        const headBindings = bind(temHead, tarHead, ctx);
+
+        const results = [];
+        for (const h of headBindings) {
+            const appliedTemTail = utils.apply(temTail, h);
+            const appliedTarTail = utils.apply(tarTail, h);
+
+            for (const t of bind(appliedTemTail, appliedTarTail, ctx)) {
+                results.push({ ...h, ...t });
+            }
+        }
+
+        return results;
+    },
+
+    // Struct matcher.
+    (template, target, ctx) => {
+        if (!isPlainObject(template) || !isPlainObject(target)) {
+            return;
+        }
+
+        const temKeys = new Set(Object.keys(template));
+        const tarKeys = new Set(Object.keys(target));
+
+        if (temKeys.intersection(tarKeys).size !== temKeys.size) {
+            return;
+        }
+
+        if (temKeys.size === 0) {
+            return [{}];
+        }
+
+        const someKey = Object.keys(template).pop();
+        const results = [];
+
+        const someBindings = bind(template[someKey], target[someKey], ctx);
+        for (const s of someBindings) {
+            const remainingTemplate = { ...template };
+            delete remainingTemplate[someKey];
+
+            const remainingTarget = { ...target };
+            delete remainingTarget[someKey];
+
+            for (const r of bind(remainingTemplate, remainingTarget, ctx)) {
+                results.push({ ...s, ...r });
+            }
+        }
+
+        return results;
+    },
+
+    // Dynamic object matcher.
+    function dynamicObjectMatcher(template, target, ctx) {
+        const [ templateOp ] = utils.deast(template, 'object');
+
+        if (!templateOp) {
+            return;
+        }
+
+        if (!isPlainObject(target)) {
+            return [];
+        }
+
+        if (template.object.length === 0) {
+            return Object.keys(target).length === 0 ? [{}] : [];
+        }
+
+        let result = [];
+
+        for (const [key, nextTarget, keyBindings] of findBindingField(
+                template.object[0][0],
+                template.object[0][1],
+                target,
+                ctx)) {
+
+            for (const kb of keyBindings) {
+                const appliedNextTarget = utils.apply(nextTarget, kb);
+                for (const otherBinding of dynamicObjectMatcher(
+                        { object: template.object.slice(1) },
+                        appliedNextTarget,
+                        ctx)) {
+
+                    result.push({ ...kb, ...otherBinding });
+                }
+            }
+        }
+
+        return result;
+    }
+    
+];
+
+function findBindingField(keyTemplate, valueTemplate, targetObj, ctx) {
+    return debug.push('findBindingField', keyTemplate, valueTemplate, () => {
+        const results = [];
+
+        for (const k of Object.keys(targetObj)) {
+            const keyBindings = bind(keyTemplate, k, ctx);
+            let bindings = [];
+
+            for (const kb of keyBindings) {
+                const valueApplied = utils.apply(targetObj[k], kb);
+                const valueBindings = bind(valueTemplate, valueApplied, ctx);
+
+                for (const vb of valueBindings) {
+                    bindings.push({ ...kb, ...vb });
+                }
+            }
+
+            if (bindings.length > 0) {
+                const newTargetObj = { ...targetObj };
+                delete newTargetObj[k];
+
+                results.push([ k, newTargetObj, bindings ]);
+            }
+        }
+
+        return results;
+    });
+}
+
+function isPlainObject(x) {
+    return x !== null && typeof x === 'object' && !Array.isArray(x);
 }
 
 function _bind(template, target, ctx) {
     return debug.push('bind', template, target, () => {
-        const [ templateOp ] = utils.deast(template);
+        for (const m of matchers) {
+            const bindings = m(template, target, ctx);
 
-        if (templateOp === 'free') {
-            return { [template?.free]: target };
-        }
-
-        if (template === target) {
-            return {};
-        }
-
-        if (utils.getFree(template).size === 0) {
-            if (utils.getFree(target).size === 0) {
-                return deepEqual(template, target) ? {} : false;
-            }
-
-            return bind(target, template, ctx);
-        }
-
-        if (Array.isArray(template)) {
-            const binding = directBindArray(template, target, ctx);
-
-            if (binding) {
-                return binding;
+            if (bindings) {
+                return bindings;
             }
         }
 
-        const templateObj = !Array.isArray(template)
-                && typeof template === 'object' && template !== null;
-
-        if (templateObj && typeof target === 'object' && target !== null) {
-            const binding = directBindObject(template, target, ctx);
-
-            if (binding) {
-                return binding;
-            }
-        }
-
-        if (!templateObj) {
-            return false;
-        }
-
-        const binding = {};
-        for (const v of utils.getFree(template)) {
-            const solution = solveFor(template, target, v, ctx);
-
-            if (!solution) {
-                return false;
-            }
-
-            binding[v] = evaluate(solution, ctx);
-
-            template = utils.apply(template, { [v]: binding[v] });
-            target = utils.apply(template, { [v]: binding[v] });
-        }
-
-        return binding;
+        return accumSolveBindings(template, target, ctx);
     });
 }
 
-function directBindArray(preferred, other, ctx) {
-    if (!Array.isArray(other) || preferred.length !== other.length) {
-        return false;
+function accumSolveBindings(preferred, other, ctx) {
+    if (utils.getFree(preferred).size === 0) {
+        if (utils.getFree(other).size === 0) {
+            return deepEqual(evaluate(preferred, ctx), evaluate(other, ctx))
+                    ? [{}] : [];
+        }
+
+        return bind(other, preferred, ctx);
     }
 
-    let bindings = {};
-    for (let i = 0; i < preferred.length; i++) {
-        const elP = preferred[i];
-        const elO = other[i];
-
-        const elBinding = bind(
-                utils.apply(elP, bindings),
-                utils.apply(elO, bindings),
-                ctx);
-
-        if (!elBinding) {
-            return false;
-        }
-
-        bindings = { ...bindings, ...elBinding };
+    if (!isPlainObject(preferred)) {
+        return [];
     }
 
-    return bindings;
-}
+    const binding = {};
 
-function directBindObject(preferred, other, ctx) {
-    return debug.push('directBindObject', preferred, other, () => {
-        const pKeys = new Set(Object.keys(preferred));
-        const oKeys = new Set(Object.keys(other));
+    for (const v of utils.getFree(preferred)) {
+        const solution = solveFor(preferred, other, v, ctx);
 
-        if (pKeys.intersection(oKeys).size !== pKeys.size) {
-            return false;
+        if (!solution) {
+            return [];
         }
 
-        let bindings = {};
-        for (const [k, v] of Object.entries(preferred)) {
-            const nextBindings = bind(
-                    utils.apply(v, bindings),
-                    utils.apply(other[k], bindings),
-                    ctx);
+        binding[v] = evaluate(solution, ctx);
 
-            debug.print('nextBindings', nextBindings);
+        preferred = utils.apply(preferred, { [v]: binding[v] });
+        other = utils.apply(other, { [v]: binding[v] });
+    }
 
-            if (!nextBindings) {
-                return false;
-            }
-
-            bindings = { ...bindings, ...nextBindings };
-        }
-
-        return bindings;
-    });
+    return [ binding ];
 }
