@@ -272,7 +272,7 @@ const testCases = [
                     }),
 
                 implication
-                    .given(
+                    .given([
                         { edge: [ _('y'), _('z') ] },
                         {
                             dist: {
@@ -282,7 +282,7 @@ const testCases = [
                                 avoid: { cat: [ _('z'), _('visited') ] }
                             }
                         }
-                    )
+                    ])
                     .where(
                         {
                             not: {
@@ -350,7 +350,7 @@ const testCases = [
                     }),
 
                 implication
-                    .given(
+                    .given([
                         { edge: [ _('y'), _('z') ] },
                         {
                             dist: {
@@ -360,7 +360,7 @@ const testCases = [
                                 avoid: { cat: [ _('z'), _('visited') ] }
                             }
                         }
-                    )
+                    ])
                     .where(
                         {
                             not: {
@@ -417,6 +417,65 @@ const testCases = [
             { k1: 'bazz', v1: 'bazzval', k2: 'bar', v2: 'barval' },
             { k1: 'waldo', v1: 'waldoval', k2: 'plugh', v2: 'plughval' },
             { k1: 'plugh', v1: 'plughval', k2: 'waldo', v2: 'waldoval' },
+        ]
+    },
+
+    {
+        name: 'match an array',
+        actualFn: () =>
+            known([
+                { foo: [ 'a', 'b', 'c' ] }
+            ])
+            .instantiate((_) => ({ foo: _('x') })),
+        expected: [
+            { x: [ 'a', 'b', 'c' ] }
+        ]
+    },
+
+    {
+        name: 'match array element',
+        actualFn: () =>
+            known([
+                { foo: [ 'a', 'b', 'c' ] }
+            ])
+            .instantiate((_) => ({ foo: ['a', _('x'), 'c' ] })),
+        expected: [
+            { x: 'b' }
+        ]
+    },
+
+    {
+        name: 'one array element spoils',
+        actualFn: () =>
+            known([
+                { foo: [ 'a', 'b', 'c' ] }
+            ])
+            .instantiate((_) => ({ foo: ['a', _('x'), 'd' ] })),
+        expected: []
+    },
+
+    {
+        name: 'aux var',
+        actualFn: () =>
+            known(({ _, implication }) => [
+                { edge: [ 'a', 'b' ] },
+                { edge: [ 'b', 'c' ] },
+
+                implication
+                    .given({ edge: [ _('x'), _('y') ] })
+                    .conclude({ connected: [ _('x'), _('y') ] }),
+
+                implication
+                    .given([
+                        { edge: [ _('x'), _('y') ] },
+                        { connected: [ _('y'), _('z') ] },
+                    ])
+                    .conclude({ connected: [ _('x'), _('z') ] })
+            ])
+            .instantiate((_) => ({ connected: ['a', _('x')] })),
+        expected: [
+            { x: 'b' },
+            { x: 'c' }
         ]
     }
 ];

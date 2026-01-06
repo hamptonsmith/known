@@ -130,6 +130,16 @@ export function dodgeVars(x, varSet) {
     return [ apply(x, renames), renames, inverse ];
 }
 
+export function extendBinding(last, next) {
+    return {
+        ...(Object.fromEntries(Object.entries(last).map(([k, v]) => [
+            k,
+            apply(v, next)
+        ]))),
+        ...next
+    };
+}
+
 export function getFree(ast, accum = new Set()) {
     if (ast?.free) {
         accum.add(ast.free);

@@ -10,8 +10,6 @@ const rules2 = {
         return this.sum([arg[0], -arg[1]], argIndex, otherExp);
     },
     eq: (arg, argIndex, otherExp) => {
-        debug.print('eq', arg, argIndex, otherExp);
-
         if (otherExp === true) {
             return [ arg[argIndex], arg[argIndex === 0 ? 1 : 0] ];
         }
@@ -28,28 +26,9 @@ const rules2 = {
         return [ { free: arg }, otherExp ];
     },
     sum: (arg, argIndex, otherExp) => {
-        debug.print('sum', arg, argIndex, otherExp);
-
         return [
             arg[argIndex],
             { diff: [ otherExp, arg[argIndex === 0 ? 1 : 0] ] }
-        ];
-    },
-    cat: (arg, argIndex, otherExp) => {
-        if (otherExp === null) {
-            return;
-        }
-
-        if (argIndex === 0) {
-            return [
-                arg[argIndex],
-                { head: otherExp }
-            ];
-        }
-
-        return [
-            arg[argIndex],
-            { tail: otherExp }
         ];
     }
 };

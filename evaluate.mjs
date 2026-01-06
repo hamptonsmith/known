@@ -4,6 +4,15 @@ import * as utils from './utils.mjs';
 import instantiate from './instantiate.mjs';
 
 const opEvals = {
+    all: (conjuncts, ctx) => {
+        const conjunctsEvald = conjuncts.map(c => evaluate(c, ctx));
+
+        if (conjunctsEvald.some(c => c === false)) {
+            return false;
+        }
+
+        return { all: conjunctsEvald };
+    },
     cat: (arg) => ({ cat: arg }),
     diff: ([ left, right ], ctx) => {
         const lEvald = evaluate(left, ctx);
@@ -52,21 +61,6 @@ const opEvals = {
         }
 
         return { gte: [ lEvald, rEvald ] };
-    },
-    length([ list, n ], ctx) {
-        const listEvald = evaluate(list, ctx);
-        const nEvald = evaluate(n, ctx);
-
-        if (listEvald === null && typeof nEvald === 'number') {
-            return nEvald === 0;
-        }
-
-        // if (listEvald?.cat) {
-        //     return this.length(
-        //             [ listEvald.cat[1], { diff: [ nEvald, 1 ] } ], ctx);
-        // }
-
-        return { length: [ listEvald, nEvald ] };
     },
     not: (arg, ctx) => {
         const argEvald = evaluate(arg, ctx);

@@ -1,3 +1,4 @@
+import * as debug from './debug.mjs';
 import instantiate from './instantiate.mjs';
 import util from 'util';
 
@@ -9,12 +10,25 @@ export function _(name) {
 
 export const implication = { given };
 
-export function given(...antecedents) {
+function validateOpts(ctxName, opts = {}) {
+    const optsKeys = Object.keys(opts);
+    if (optsKeys.length > 0) {
+        throw new Error(`Unexpected ${ctxName}() option: ${optsKeys[0]}`);
+    }
+}
+
+export function given(antecedents, opts) {
+    validateOpts('given', opts);
+
+    antecedents = toList(antecedents, _);
+
     return {
         conclude(consequent) {
             return { antecedents, conditions: [], consequent };
         },
-        where(...conditions) {
+        where(conditions) {
+            conditions = toList(conditions, _);
+
             return {
                 conclude(consequent) {
                     return { antecedents, conditions, consequent };
@@ -24,48 +38,50 @@ export function given(...antecedents) {
     }
 }
 
-function known(facts) {
-    if (typeof facts === 'function') {
-        facts = facts({ _, given, implication });
+function toList(original, ctx) {
+    if (!Array.isArray(original)) {
+        original = [original];
     }
+
+    return original
+            .map(el => typeof el === 'function' ? el(ctx) : el)
+            .flat(Infinity);
+}
+
+function known(facts, opts) {
+    validateOpts('known', opts);
+
+    facts = toList(facts, { _, implication });
+
+    let shouldDebug = false;
 
     return {
         facts,
-        instantiate(...templates) {
-            templates = templates.map(t => {
-                if (typeof t === 'function') {
-                    let result = t(_);
+        debug(on = true) {
+            shouldDebug = on;
+            return this;
+        },
+        instantiate(templates, opts) {
+            validateOpts('instantiate', opts);
 
-                    if (result === undefined) {
-                        throw new Error('instantiate() function argument '
-                                + 'evaluated to undefined');
-                    }
+            templates = toList(templates, _);
 
-                    if (!Array.isArray(result)) {
-                        result = [result];
-                    }
-
-                    return result;
-                }
-
-                return t;
-            }).flat(Infinity);
-
-            return instantiate(
+            return debug.withDebug(shouldDebug, () => instantiate(
                 facts.map(f =>
                     'consequent' in f
                     ? f
                     : {
-                        antecedents: [],
+                        antecedents: [true],
                         conditions: [],
                         consequent: f
                     }),
-                templates);
+                templates));
         },
-        known(additionalFacts) {
-            if (typeof additionalFacts === 'function') {
-                additionalFacts = (facts({ _, given, implication }));
-            }
+        known(additionalFacts, opts) {
+            validateOpts('known', opts);
+
+            additionalFacts =
+                    toList(additionalFacts, { _, given, implication });
 
             for (const f of additionalFacts) {
                 facts.push(f);

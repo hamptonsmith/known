@@ -23,6 +23,11 @@ export default function bind(template, target, ctx) {
     return bindings;
 }
 
+const equality = [
+    (x, y) => deepEqual(x, y),
+    (x, y) => x?.regexp && (new RegExp(x.regexp)).test(y)
+];
+
 const matchers = [
 
     // Free variable matcher.
@@ -142,7 +147,7 @@ const matchers = [
 
         return result;
     }
-    
+
 ];
 
 function findBindingField(keyTemplate, valueTemplate, targetObj, ctx) {
@@ -188,15 +193,30 @@ function _bind(template, target, ctx) {
             }
         }
 
-        return accumSolveBindings(template, target, ctx);
+        let solutions = solveBindings(template, target, ctx);
+
+        if (solutions.length === 0 && utils.getFree(target).size > 0) {
+            solutions = solveBindings(target, template, ctx);
+        }
+
+        return solutions;
     });
 }
 
-function accumSolveBindings(preferred, other, ctx) {
+function solveBindings(preferred, other, ctx) {
     if (utils.getFree(preferred).size === 0) {
         if (utils.getFree(other).size === 0) {
-            return deepEqual(evaluate(preferred, ctx), evaluate(other, ctx))
-                    ? [{}] : [];
+
+            const preferredEvald = evaluate(preferred, ctx);
+            const otherEvald = evaluate(other, ctx);
+
+            for (const eq of equality) {
+                if (eq(preferredEvald, otherEvald)) {
+                    return [{}];
+                }
+            }
+
+            return [];
         }
 
         return bind(other, preferred, ctx);

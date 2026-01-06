@@ -44,11 +44,17 @@ function instantiate(rules, templates, conditions = []) {
         const bindCtx = { rules };
         const [ head, ...rest ] = templates;
 
+        if (evaluate(head, bindCtx) === true) {
+            return instantiate(rules, rest, conditions);
+        }
+
         const results = [];
         for (const r of rules) {
+            const [ rDodged ] = utils.dodgeVars(r, utils.getFree(head));
+
             const applications = typeof head === 'function'
                     ? head(bindCtx)
-                    : applyRule(rules, head, r);
+                    : applyRule(rules, head, rDodged);
 
             for (const a of applications) {
                 const restApplied = utils.apply(rest, a.bindings);
@@ -91,11 +97,6 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
         return [];
     }
 
-    if (!tOp?.object && typeof tOp === 'object' && typeof cOp === 'object'
-            && Object.keys(tOp).length !== Object.keys(cOp)) {
-        return [];
-    }
-
     return debug.push('applyRule', '\n\n', { antecedents, conditions, consequent },
         '\n\n',
         template,
@@ -104,21 +105,15 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
 
             const startFreeVars = utils.getFree(template);
 
-            const [ dodgingTemplate, dodgeBindings, undodgeBindings ] =
-                    utils.dodgeVars(template, utils.getFree(consequent));
-
-            const dodgedFreeVars = utils.getFree(dodgingTemplate);
-
             const consequentBindingAlternatives =
-                    bind(consequent, dodgingTemplate, bindCtx);
+                    bind(consequent, template, bindCtx);
 
             const results = [];
             for (const cba of consequentBindingAlternatives) {
                 utils.pushAll(results, applyRuleUnderConsequentBinding(
                     rules,
                     cba,
-                    dodgingTemplate,
-                    undodgeBindings,
+                    template,
                     antecedents,
                     conditions,
                     consequent,
@@ -134,8 +129,7 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
 function applyRuleUnderConsequentBinding(
     rules,
     consequentBinding,
-    dodgingTemplate,
-    undodgeBindings,
+    template,
     antecedents,
     conditions,
     consequent,
@@ -144,10 +138,8 @@ function applyRuleUnderConsequentBinding(
 ) {
     return debug.push('applyRuleUnderConsequentBinding', consequentBinding,
         () => {
-            const dodgedFreeVars = utils.getFree(dodgingTemplate);
-
-            const dodgingTemplateApplied =
-                    utils.apply(dodgingTemplate, consequentBinding);
+            const templateApplied =
+                    utils.apply(template, consequentBinding);
 
             const conditionsApplied = conditions.map(
                     c => evaluate(utils.apply(c, consequentBinding), bindCtx));
@@ -158,42 +150,33 @@ function applyRuleUnderConsequentBinding(
 
             const antecedentsApplied =
                     utils.apply(antecedents, consequentBinding);
+
             const consequentApplied =
                     utils.apply(consequent, consequentBinding);
 
-            const antecedentInstantiations = instantiate(
-                    rules, antecedentsApplied, conditionsApplied);
+            const antecedentInstantiations =
+                    instantiate(rules, antecedentsApplied, conditionsApplied);
 
             const results = [];
             for (const i of antecedentInstantiations) {
                 const expandedConsequent =
                         utils.apply(consequentApplied, i.bindings);
 
-                const expandedUndodgedConsequent =
-                        utils.apply(expandedConsequent, undodgeBindings);
-
-                const expandedUndodgedConditions = utils.apply([
+                const expandedUndodgedConditions = [
                     ...conditionsApplied,
                     ...i.conditions
-                ], undodgeBindings);
+                ];
 
                 const additionalBindingAlternatives = bind(
-                        dodgingTemplateApplied, expandedConsequent, bindCtx);
-
-                debug.print('additionalBindingAlternatives', additionalBindingAlternatives);
+                        templateApplied, expandedConsequent, bindCtx);
 
                 for (const additionalBinding of additionalBindingAlternatives) {
-                    const fullDodgingTemplateBinding = {
-                        ...consequentBinding,
-                        ...additionalBinding
-                    };
-
-                    debug.print('fullDodgingTemplateBinding', fullDodgingTemplateBinding);
+                    const fullTemplateBinding = utils.extendBinding(
+                            consequentBinding, additionalBinding);
 
                     const templateBinding = Object.fromEntries(
-                        Object.entries(fullDodgingTemplateBinding)
-                        .filter(([k, v]) => dodgedFreeVars.has(k))
-                        .map(([k, v]) => [undodgeBindings[k]?.free ?? k, v])
+                        Object.entries(fullTemplateBinding)
+                        .filter(([k, v]) => startFreeVars.has(k))
                     );
 
                     for (const v of Object.values(templateBinding)) {
@@ -201,11 +184,13 @@ function applyRuleUnderConsequentBinding(
 
                         if (!startFreeVars.isSupersetOf(vars)) {
                             console.log('Huh?');
+                            console.log('startFreeVars', startFreeVars);
+                            console.log('not a superset of binding vars', inspect(templateBinding));
                             console.log(inspect(template));
                             console.log(inspect(antecedents),
                                     inspect(conditions), inspect(consequent));
                             console.log(inspect(templateBinding));
-                            process.exit(1);
+                            throw new Error();
                         }
                     }
 

@@ -1,8 +1,8 @@
 {
-  "name": "knowish",
+  "name": "@shieldsbetter/known",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "known.mjs",
   "scripts": {
     "test": "node test.mjs"
   },
