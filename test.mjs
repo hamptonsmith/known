@@ -6,6 +6,8 @@ import * as utils from './utils.mjs';
 
 import { withDebug } from './debug.mjs';
 
+Error.stackTraceLimit = Infinity;
+
 const testCases = [
     {
         name: 'basic solve',
@@ -476,6 +478,22 @@ const testCases = [
         expected: [
             { x: 'b' },
             { x: 'c' }
+        ]
+    },
+
+    {
+        name: 'commutivity',
+        actualFn: () =>
+            known(({ _, implication }) => [
+                { foo: [ 'a', 'b' ] },
+
+                implication
+                    .given({ foo: [ _('x'), _('y') ] })
+                    .conclude({ foo: [ _('y'), _('x') ] })
+            ])
+            .instantiate((_) => ({ foo: ['b', 'a'] })),
+        expected: [
+            {}
         ]
     }
 ];

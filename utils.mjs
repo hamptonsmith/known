@@ -1,5 +1,7 @@
 import assert from 'assert';
+import deepEqual from 'deep-equal';
 import evaluate from './evaluate.mjs';
+import hash from 'object-hash';
 import util from 'util';
 
 export function apply(x, bindings) {
@@ -13,7 +15,8 @@ export function apply(x, bindings) {
 
     if (x?.free) {
         return bindings[x.free] !== undefined ?
-            apply(bindings[x.free], { ...bindings, [x.free]: undefined })
+            apply(structuredClone(bindings[x.free]),
+                    { ...bindings, [x.free]: undefined })
           : x;
     }
 
@@ -95,6 +98,44 @@ export function deast(o, assertType, defaultArg) {
     }
 
     return [ k, o[k] ];
+}
+
+export function detectLoops(map, defaultValue, bucket, key, fn) {
+    const keyHash = hash(key);
+
+    if (map.has(bucket)) {
+        const bucketValue = map.get(bucket);
+
+        if (bucketValue.has(keyHash)
+                && bucketValue.get(keyHash).some(vk => deepEqual(vk, key))) {
+            return defaultValue;
+        }
+    }
+
+    if (!map.has(bucket)) {
+        map.set(bucket, new Map());
+    }
+
+    if (!map.get(bucket).has(keyHash)) {
+        map.get(bucket).set(keyHash, []);
+    }
+
+    map.get(bucket).get(keyHash).push(key);
+
+    try {
+        return fn();
+    }
+    finally {
+        map.get(bucket).get(keyHash).pop(key);
+
+        if (map.get(bucket).get(keyHash).length === 0) {
+            map.get(bucket).delete(keyHash);
+        }
+
+        if (map.get(bucket).size === 0) {
+            map.delete(bucket);
+        }
+    }
 }
 
 function dodgeVar(original, varSet) {

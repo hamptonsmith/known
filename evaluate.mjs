@@ -46,7 +46,7 @@ const opEvals = {
                 return { exists: [ values, where ] };
             }
 
-            const instantiations = instantiate(ctx.rules, where);
+            const instantiations = instantiate(ctx.rules, where, [], { visited: new Map() });
 
             return instantiations.length > 0;
         });

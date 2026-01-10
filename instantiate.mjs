@@ -1,8 +1,10 @@
+import assert from 'assert';
 import bind from './bind.mjs';
 import * as debug from './debug.mjs';
 import chalk from 'chalk';
 import deepEqual from 'deep-equal';
 import evaluate from './evaluate.mjs';
+import hash from 'object-hash';
 import * as utils from './utils.mjs';
 
 import { isSolvableAst, solveForAll } from './solve.mjs';
@@ -29,13 +31,17 @@ export default function axiomaticInstantiate(
     rules, templates, conditions = []
 ) {
     const candidates =
-            instantiate([ ...axiomaticRules, ...rules ], templates, conditions);
+            instantiate([ ...axiomaticRules, ...rules ], templates, conditions,
+            { visited: new Map() });
 
     return candidates.filter(({ conditions }) => conditions.length === 0)
             .map(({ bindings }) => bindings);
 }
 
-function instantiate(rules, templates, conditions = []) {
+function instantiate(rules, templates, conditions = [],
+        env = { visited: new Map() }) {
+    assert(arguments.length === 4, 'instantiate called with 4 args');
+
     return debug.push('instantiate', templates, () => {
         if (templates.length === 0) {
             return [{ bindings: {}, conditions }];
@@ -45,41 +51,56 @@ function instantiate(rules, templates, conditions = []) {
         const [ head, ...rest ] = templates;
 
         if (evaluate(head, bindCtx) === true) {
-            return instantiate(rules, rest, conditions);
+            return instantiate(rules, rest, conditions, env);
+        }
+
+        if (head?.templates) {
+            return instantiate(
+                rules,
+                [
+                    ...(Array.isArray(head.templates)
+                            ? head.templates : [ head.templates ]),
+                    ...rest
+                ],
+                conditions,
+                env);
         }
 
         const results = [];
         for (const r of rules) {
-            const [ rDodged ] = utils.dodgeVars(r, utils.getFree(head));
+            utils.detectLoops(env.visited, null, r, head, () => {
+                const [ rDodged ] = utils.dodgeVars(r, utils.getFree(head));
 
-            const applications = typeof head === 'function'
-                    ? head(bindCtx)
-                    : applyRule(rules, head, rDodged);
+                const applications = typeof head === 'function'
+                        ? head(bindCtx)
+                        : applyRule(rules, head, rDodged, env);
 
-            for (const a of applications) {
-                const restApplied = utils.apply(rest, a.bindings);
-                const conditionsApplied = conditions.map(
-                        c => evaluate(utils.apply(c, a.bindings), bindCtx));
+                for (const a of applications) {
+                    const restApplied = utils.apply(rest, a.bindings);
+                    const conditionsApplied = conditions.map(
+                            c => evaluate(utils.apply(c, a.bindings), bindCtx));
 
-                if (conditionsApplied.some(c => c === false)) {
-                    continue;
+                    if (conditionsApplied.some(c => c === false)) {
+                        continue;
+                    }
+
+                    if (rest.length === 0) {
+                        utils.pushAll(results, utils.applyAndEval(
+                            a.bindings, conditionsApplied, bindCtx));
+                    }
+                    else {
+                        utils.pushAll(results, instantiate(
+                            rules,
+                            restApplied,
+                            [ ...conditionsApplied, ...a.conditions ],
+                            env
+                        ).map((i) => ({
+                            ...i,
+                            bindings: { ...a.bindings, ...i.bindings }
+                        })));
+                    }
                 }
-
-                if (rest.length === 0) {
-                    utils.pushAll(results, utils.applyAndEval(
-                        a.bindings, conditionsApplied, bindCtx));
-                }
-                else {
-                    utils.pushAll(results, instantiate(
-                        rules,
-                        restApplied,
-                        [ ...conditionsApplied, ...a.conditions ]
-                    ).map((i) => ({
-                        ...i,
-                        bindings: { ...a.bindings, ...i.bindings }
-                    })));
-                }
-            }
+            });
         }
 
         return results;
@@ -87,7 +108,7 @@ function instantiate(rules, templates, conditions = []) {
 }
 
 // Returns [ <Conditional Instantiation> ]
-function applyRule(rules, template, { antecedents, conditions, consequent }) {
+function applyRule(rules, template, { antecedents, conditions, consequent }, env) {
     // Short circuit when clearly irrelevant.
     const [ tOp ] = utils.deast(template);
     const [ cOp ] = utils.deast(consequent);
@@ -118,7 +139,8 @@ function applyRule(rules, template, { antecedents, conditions, consequent }) {
                     conditions,
                     consequent,
                     bindCtx,
-                    startFreeVars
+                    startFreeVars,
+                    env
                 ));
             }
 
@@ -134,7 +156,8 @@ function applyRuleUnderConsequentBinding(
     conditions,
     consequent,
     bindCtx,
-    startFreeVars
+    startFreeVars,
+    env
 ) {
     return debug.push('applyRuleUnderConsequentBinding', consequentBinding,
         () => {
@@ -155,7 +178,8 @@ function applyRuleUnderConsequentBinding(
                     utils.apply(consequent, consequentBinding);
 
             const antecedentInstantiations =
-                    instantiate(rules, antecedentsApplied, conditionsApplied);
+                    instantiate(rules, antecedentsApplied, conditionsApplied,
+                        env);
 
             const results = [];
             for (const i of antecedentInstantiations) {
@@ -178,21 +202,6 @@ function applyRuleUnderConsequentBinding(
                         Object.entries(fullTemplateBinding)
                         .filter(([k, v]) => startFreeVars.has(k))
                     );
-
-                    for (const v of Object.values(templateBinding)) {
-                        const vars = utils.getFree(v);
-
-                        if (!startFreeVars.isSupersetOf(vars)) {
-                            console.log('Huh?');
-                            console.log('startFreeVars', startFreeVars);
-                            console.log('not a superset of binding vars', inspect(templateBinding));
-                            console.log(inspect(template));
-                            console.log(inspect(antecedents),
-                                    inspect(conditions), inspect(consequent));
-                            console.log(inspect(templateBinding));
-                            throw new Error();
-                        }
-                    }
 
                     const additionalResults = utils.applyAndEval(
                             templateBinding,
