@@ -31,49 +31,78 @@ export default function axiomaticInstantiate(
     rules, templates, conditions = []
 ) {
     const candidates =
-            instantiate([ ...axiomaticRules, ...rules ], templates, conditions,
-            { visited: new Map() });
+            instantiate([ ...axiomaticRules, ...rules ], templates, conditions);
 
     return candidates.filter(({ conditions }) => conditions.length === 0)
             .map(({ bindings }) => bindings);
 }
 
+export function explain(rules, templates, qBinding) {
+    const candidates =
+            instantiate([ ...axiomaticRules, ...rules ], templates, []);
+
+    return candidates
+            .filter(({ conditions }) => conditions.length === 0)
+            .filter(({ bindings: aBinding }) => deepEqual(aBinding, qBinding))
+            .map(({ explanation }) => explanation);
+}
+
 function instantiate(rules, templates, conditions = [],
-        env = { visited: new Map() }) {
-    assert(arguments.length === 4, 'instantiate called with 4 args');
+        env = { visited: new Map(), visited2: new Map() }) {
+    assert(arguments.length === 3 || arguments.length === 4, 'instantiate called with 4 args');
 
     return debug.push('instantiate', templates, () => {
         if (templates.length === 0) {
-            return [{ bindings: {}, conditions }];
+            return [{
+                bindings: {},
+                conditions,
+                explanation: []
+            }];
         }
 
         const bindCtx = { rules };
         const [ head, ...rest ] = templates;
 
-        if (evaluate(head, bindCtx) === true) {
-            return instantiate(rules, rest, conditions, env);
-        }
+        return utils.detectLoops(env.visited2, [], null, [ head, conditions ], () => {
+            if (evaluate(head, bindCtx) === true) {
+                return instantiate(rules, rest, conditions, env);
+            }
 
-        if (head?.templates) {
-            return instantiate(
-                rules,
-                [
-                    ...(Array.isArray(head.templates)
-                            ? head.templates : [ head.templates ]),
-                    ...rest
-                ],
-                conditions,
-                env);
-        }
+            if (head?.templates) {
+                return instantiate(
+                    rules,
+                    [
+                        ...(Array.isArray(head.templates)
+                                ? head.templates : [ head.templates ]),
+                        ...rest
+                    ],
+                    conditions,
+                    env);
+            }
 
-        const results = [];
-        for (const r of rules) {
-            utils.detectLoops(env.visited, null, r, head, () => {
+            const results = [];
+            for (const r of rules) {
                 const [ rDodged ] = utils.dodgeVars(r, utils.getFree(head));
 
                 const applications = typeof head === 'function'
-                        ? head(bindCtx)
-                        : applyRule(rules, head, rDodged, env);
+                        ? head(bindCtx).map(a => ({
+                            ...a,
+                            explanation: {
+                                appliedFunctionTemplate: {
+                                    fn: '' + head,
+                                    explanation: a.explanation
+                                }
+                            }
+                        }))
+                        : applyRule(rules, head, rDodged, env).map(a => ({
+                            ...a,
+                            explanation: {
+                                applyRule: {
+                                    rule: rDodged,
+                                    explanation: a.explanation
+                                }
+                            }
+                        }));
 
                 for (const a of applications) {
                     const restApplied = utils.apply(rest, a.bindings);
@@ -85,8 +114,16 @@ function instantiate(rules, templates, conditions = [],
                     }
 
                     if (rest.length === 0) {
-                        utils.pushAll(results, utils.applyAndEval(
-                            a.bindings, conditionsApplied, bindCtx));
+                        utils.pushAll(results, utils
+                            .applyAndEval(
+                                a.bindings, conditionsApplied, bindCtx)
+                            .map(r => ({
+                                ...r,
+                                explanation: [ {
+                                    template: utils.apply(head, a.bindings),
+                                    explanation: a.explanation
+                                } ]
+                            })));
                     }
                     else {
                         utils.pushAll(results, instantiate(
@@ -96,14 +133,22 @@ function instantiate(rules, templates, conditions = [],
                             env
                         ).map((i) => ({
                             ...i,
-                            bindings: { ...a.bindings, ...i.bindings }
+                            bindings: { ...a.bindings, ...i.bindings },
+                            explanation: [
+                                {
+                                    template: utils.apply(
+                                        head, { ...a.bindings, ...i.bindings }),
+                                    explanation: a.explanation
+                                },
+                                ...i.explanation
+                            ]
                         })));
                     }
                 }
-            });
-        }
+            }
 
-        return results;
+            return results;
+        });
     });
 }
 
@@ -219,10 +264,19 @@ function applyRuleUnderConsequentBinding(
                         }
                     }
 
-                    utils.pushAll(results, utils.applyAndEval(
+                    utils.pushAll(results, utils
+                        .applyAndEval(
                             templateBinding,
                             expandedUndodgedConditions,
-                            bindCtx));
+                            bindCtx
+                        )
+                        .map(r => ({
+                            ...r,
+                            explanation: {
+                                antecedent: i.explanation,
+                                additionalBinding
+                            }
+                        })));
                 }
             }
 

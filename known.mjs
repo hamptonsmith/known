@@ -1,5 +1,5 @@
 import * as debug from './debug.mjs';
-import instantiate from './instantiate.mjs';
+import instantiate, { explain } from './instantiate.mjs';
 import util from 'util';
 
 import { withDebug } from './debug.mjs';
@@ -60,6 +60,23 @@ function known(facts, opts) {
         debug(on = true) {
             shouldDebug = on;
             return this;
+        },
+        explain(templates, bindings, opts) {
+            validateOpts('explain', opts);
+
+            templates = toList(templates, _);
+
+            return debug.withDebug(shouldDebug, () => explain(
+                facts.map(f =>
+                    'consequent' in f
+                    ? f
+                    : {
+                        antecedents: [true],
+                        conditions: [],
+                        consequent: f
+                    }),
+                templates,
+                bindings));
         },
         instantiate(templates, opts) {
             validateOpts('instantiate', opts);
